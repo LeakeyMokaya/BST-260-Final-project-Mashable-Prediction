@@ -1,0 +1,154 @@
+---
+title: "Project Code"
+author: "Gunjan"
+date: "22 November 2017"
+output: html_document
+---
+
+#Load libraries.
+
+```{r, warning=FALSE}
+library(tidyverse)
+library(caret)
+```
+
+#Load data.
+
+```{r}
+mash_data <- read.csv("/Users/abhijithasok/Documents/Harvard Health Data Science/Fall 2017/Intro to Data Science/Project//OnlineNewsPopularity/OnlineNewsPopularity.csv",header = T)
+
+mash_work <- mash_data
+
+scraped_data <- read.csv("/Users/abhijithasok/Documents/Harvard Health Data Science/Fall 2017/Intro to Data Science/Project/ScrapedDataFull.csv",header = T)
+
+scraped_data$X.1 <- NULL
+scraped_data$X <- NULL
+```
+
+#Adding IDs
+
+```{r}
+id <- seq(1,nrow(mash_work),1)
+mash_work <- cbind(id,mash_work)
+```
+
+#Adding scraped data
+
+```{r}
+mash_work <- mash_work %>% inner_join(scraped_data[,c("id","date","author","title")],by="id")
+```
+
+#Outlier Removal
+
+```{r}
+mash_work %>% ggplot(aes(x=id,y=shares)) + geom_boxplot()
+mash_work <- mash_work %>% filter(shares < 250000) #Outlier removal
+mash_work %>% ggplot(aes(x=id,y=shares)) + geom_boxplot()
+share_mean <- mean(mash_work$shares)
+```
+
+#Assumption - All authors have written more than one article. Remove authors with just 1 article from the data.
+
+```{r}
+article_count_by_author <- mash_work %>%
+                            group_by(author) %>%
+                            summarise(author_article_count = n())
+
+mash_work <- mash_work %>% left_join(article_count_by_author,by="author")
+
+mash_work <- mash_work %>% filter(author_article_count > 1)
+
+```
+
+
+#Split into train and test.
+
+```{r}
+set.seed(123)
+train_Index <- createDataPartition(mash_work$shares, times = 1, p=0.9, list = F)
+mash_work_train <- mash_work[train_Index,]
+mash_work_test <- mash_work[-train_Index,]
+```
+
+#Baseline prediction with share mean.
+
+```{r}
+share_mean <- mean(mash_work_train$shares)
+prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = share_mean)
+
+RMSE <- function(true_ratings, predicted_ratings){
+    sqrt(mean((true_ratings - predicted_ratings)^2))
+}
+
+RMSE(prediction_list$shares,prediction_list$predicted_shares)
+```
+
+#Author effect - No regularization
+
+```{r}
+author_means <- mash_work_train %>% 
+                  group_by(author) %>%
+                  summarise(author_effect = mean(shares - share_mean))
+
+prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, author = mash_work_test$author)
+
+prediction_list <- prediction_list %>% inner_join(author_means,by="author")
+
+prediction_list <- prediction_list %>%
+                    mutate(predicted_shares = share_mean + author_effect)
+
+RMSE(prediction_list$shares,prediction_list$predicted_shares)
+```
+
+# Author effect - Regularization
+
+```{r}
+lambdas <- seq(0,1000)
+tmp <- mash_work_train %>% 
+  group_by(author) %>% 
+  summarize(author_effect = sum(shares - share_mean), n_i = n())
+
+rmses <- sapply(lambdas, function(l){
+  joined <- mash_work_test %>% 
+    left_join(tmp, by='author') %>% 
+    mutate(b_i = author_effect/(n_i+l)) %>%
+    replace_na(list(b_i=0))
+    predicted_shares <- share_mean + joined$b_i
+    return(RMSE(predicted_shares, mash_work_test$shares))
+})
+qplot(lambdas, rmses) 
+```
+
+# Text effects - Top words with TF > 300 ( Note io to ios)
+
+```{r}
+top_words <- c("twitter", "facebook", "app", "appl", "googl", "iphon", "amazon", "video", "obama", "photo", "smartphon", "instagram", "microsoft", "android", "mobil", "samsung", "youtub", "vine", "ipad", "million", "trailer", "internet", "ios", "tech")
+
+mash_work_train$title <- tolower(mash_work_train$title)
+mash_work_test$title <- tolower(mash_work_test$title)
+
+mash_work_train <- mash_work_train %>%
+                    mutate(top_words_title = ifelse(grepl(paste(top_words,collapse = "|"),title),1,0))
+
+mash_work_test <- mash_work_test %>%
+                    mutate(top_words_title = ifelse(grepl(paste(top_words,collapse = "|"),title),1,0))
+```
+
+#Topword effect
+
+```{r}
+shares_by_topwords <- mash_work_train %>%
+                        group_by(top_words_title) %>%
+                        summarise(topword_effect = mean(shares - share_mean))
+
+prediction_list <- prediction_list %>% left_join(mash_work_test[,c("id","top_words_title")],by="id")
+
+prediction_list <- prediction_list %>% left_join(shares_by_topwords,by="top_words_title")
+
+prediction_list <- prediction_list %>%
+                    mutate(predicted_shares = share_mean + topword_effect)
+
+RMSE(prediction_list$shares,prediction_list$predicted_shares)
+
+```
+

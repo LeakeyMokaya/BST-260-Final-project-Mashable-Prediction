@@ -1,0 +1,118 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(rvest)
+library(tidyverse)
+```
+
+
+
+```{r}
+
+#read in csv
+
+MyData <- read.csv(file="OnlineNewsPopularity.csv", header=TRUE, sep=",", stringsAsFactors = FALSE)
+
+MyData_abb <- head(MyData,100)
+```
+
+```{r}
+
+#get get the urls and make the a list
+
+urls <- data.frame( MyData_abb$url)
+
+```
+
+
+
+```{r}
+#define the function to get the article content
+
+
+get_text <- function(x){
+
+  y <- read_html(x)
+  
+  
+#get the article content
+  
+  
+  text <- y %>%
+  html_node(".article-content") %>%
+  html_text()
+  
+  
+#get the author name
+   a <- y %>%
+    html_node(".author_name a") %>%
+  html_text()
+  
+
+  if(!is.na(a)) {
+    
+    a <- a
+    
+    }
+  
+  if(is.na(a)) {
+    
+     b <- y  %>%
+       html_node(".basic") %>%
+       html_text()
+     
+     a <- b
+  }
+   
+   
+#get the title
+  title <- y %>%
+  html_node(".title") %>%
+  html_text()
+  
+#get the date
+ 
+  date <- y %>%
+  html_node("time") %>%
+  html_text()
+  
+  
+
+  
+  return(data.frame(date = date, title = title, author = a, text = text, stringsAsFactors=F))
+
+
+}
+
+
+```
+
+```{r}
+#title_all <- apply(urls, 1, get_title)
+#date_all <- apply(urls, 1, get_date)
+#author_all <- apply(urls, 1, get_author)
+
+
+#this one below works
+#text_all <- apply(urls, 1, get_text)
+
+text_all <- do.call("rbind", apply(urls, 1, get_text))
+
+
+```
+
+
+
+```{r}
+#add an id to the left of the data frame
+
+id_df <- data.frame(id = seq.int(nrow(text_all)))
+
+total_df <- cbind(id_df, text_all)
+
+```
+
+
