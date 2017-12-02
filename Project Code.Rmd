@@ -32,6 +32,7 @@ id <- seq(1,nrow(mash_work),1)
 mash_work <- cbind(id,mash_work)
 ```
 
+
 #Adding scraped data
 
 ```{r}
@@ -64,8 +65,8 @@ mash_work <- mash_work %>% filter(author_article_count > 1)
 #Split into train and test.
 
 ```{r}
-set.seed(123)
-train_Index <- createDataPartition(mash_work$shares, times = 1, p=0.9, list = F)
+set.seed(10)
+train_Index <- createDataPartition(mash_work$shares, times = 1, p=0.75, list = F)
 mash_work_train <- mash_work[train_Index,]
 mash_work_test <- mash_work[-train_Index,]
 ```
@@ -103,20 +104,20 @@ RMSE(prediction_list$shares,prediction_list$predicted_shares)
 # Author effect - Regularization
 
 ```{r}
-lambdas <- seq(0,1000)
-tmp <- mash_work_train %>% 
-  group_by(author) %>% 
-  summarize(author_effect = sum(shares - share_mean), n_i = n())
-
-rmses <- sapply(lambdas, function(l){
-  joined <- mash_work_test %>% 
-    left_join(tmp, by='author') %>% 
-    mutate(b_i = author_effect/(n_i+l)) %>%
-    replace_na(list(b_i=0))
-    predicted_shares <- share_mean + joined$b_i
-    return(RMSE(predicted_shares, mash_work_test$shares))
-})
-qplot(lambdas, rmses) 
+# lambdas <- seq(0,1000)
+# tmp <- mash_work_train %>% 
+#   group_by(author) %>% 
+#   summarize(author_effect = sum(shares - share_mean), n_i = n())
+# 
+# rmses <- sapply(lambdas, function(l){
+#   joined <- mash_work_test %>% 
+#     left_join(tmp, by='author') %>% 
+#     mutate(b_i = author_effect/(n_i+l)) %>%
+#     replace_na(list(b_i=0))
+#     predicted_shares <- share_mean + joined$b_i
+#     return(RMSE(predicted_shares, mash_work_test$shares))
+# })
+# qplot(lambdas, rmses) 
 ```
 
 # Text effects - Top words with TF > 300 ( Note io to ios)
@@ -150,5 +151,171 @@ prediction_list <- prediction_list %>%
 
 RMSE(prediction_list$shares,prediction_list$predicted_shares)
 
+```
+
+# Clearing unused character and factor variables for modelling
+
+```{r}
+mash_work_train <- mash_work_train[,-c(2:3,21:29,41:45)]
+mash_work_test <- mash_work_test[,-c(2:3,21:29,41:45)]
+mash_work_train$author_article_count <- as.numeric(mash_work_train$author_article_count)
+mash_work_test$author_article_count <- as.numeric(mash_work_test$author_article_count)
+```
+
+#Baseline regression
+
+```{r}
+regmodel <- lm(shares ~ ., data=mash_work_train[,-which(names(mash_work_train) %in% c("id","date","author","title","n_unique_tokens","n_non_stop_words","self_reference_min_shares","self_reference_max_shares","global_sentiment_polarity","weekday_is_saturday","weekday_is_sunday","title_subjectivity","rate_negative_words","max_positive_polarity","min_positive_polarity","max_negative_polarity","min_negative_polarity","global_subjectivity","rate_positive_words"))],na.action = na.omit)
+predictions <- predict(regmodel, newdata = mash_work_test[,-which(names(mash_work_test) %in% c("id","date","author","title"))])
+
+prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = predictions)
+
+ModelMetrics::rmse(prediction_list$shares,prediction_list$predicted_shares)
+```
+
+#Baseline regression without correlated variables
+
+```{r}
+# regmodel <- lm(shares ~ .- n_unique_tokens - n_non_stop_words - self_reference_min_shares - self_reference_max_shares - global_sentiment_polarity - weekday_is_saturday - weekday_is_sunday - title_subjectivity - rate_negative_words, data=mash_work_train[,-which(names(mash_work_train) %in% c("id","date","author","title"))])
+# predictions <- predict(regmodel, newdata = mash_work_test[,-which(names(mash_work_test) %in% c("id","date","author","title"))])
+# 
+# prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = predictions)
+# 
+# RMSE(prediction_list$shares,prediction_list$predicted_shares)
+```
+
+#Step-wise backward
+
+```{r}
+library(olsrr)
+olsback <- ols_step_forward(regmodel)
+
+#removed_vars <- olsback$removed
+
+regmodel1 <- lm(as.formula(paste("shares ~ ",paste(olsback$predictors,collapse = "+"),sep="")), data=mash_work_train[,-which(names(mash_work_train) %in% c("id","date","author","title","n_unique_tokens","n_non_stop_words","self_reference_min_shares","self_reference_max_shares","global_sentiment_polarity","weekday_is_saturday","weekday_is_sunday","title_subjectivity","rate_negative_words","max_positive_polarity","min_positive_polarity","max_negative_polarity","min_negative_polarity","global_subjectivity","rate_positive_words"))])
+predictions <- predict(regmodel1, newdata = mash_work_test[,-which(names(mash_work_test) %in% c("id","date","author","title"))])
+
+prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = predictions)
+
+ModelMetrics::rmse(prediction_list$shares,prediction_list$predicted_shares)
+```
+
+#CV
+
+```{r}
+res <- train(as.formula(paste("shares ~ ",paste(olsback$predictors,collapse = "+"),sep="")),
+             data = mash_work_train[,-which(names(mash_work_train) %in% c("id","date","author","title","n_unique_tokens","n_non_stop_words","self_reference_min_shares","self_reference_max_shares","global_sentiment_polarity","weekday_is_saturday","weekday_is_sunday","title_subjectivity","rate_negative_words","max_positive_polarity","min_positive_polarity","max_negative_polarity","min_negative_polarity","global_subjectivity","rate_positive_words"))],
+             method = "rf",
+             trControl = trainControl(method='cv', number=20),
+             metric="RMSE")
+```
+
+
+#PCA
+
+```{r}
+prin_comp_train <- prcomp(mash_work_train[,-which(names(mash_work_train) %in% c("id","shares","date","author","title"))], scale. = T)
+pr_var <- (prin_comp$sdev)^2
+prop_varex <- pr_var / sum(pr_var)
+plot(prop_varex, xlab = "Principal Component",
+     ylab = "Proportion of Variance Explained",
+     type = "b")
+
+plot(cumsum(prop_varex), xlab = "Principal Component",
+     ylab = "Cumulative Proportion of Variance Explained",
+     type = "b")
+
+# We choose 30 PCs. They cover 94.5% of the variance of the data
+
+comp_train <- data.frame(prin_comp_train$x)[,1:30]
+
+# Doing the same thing over the test set.
+
+prin_comp_test <- prcomp(mash_work_test[,-which(names(mash_work_test) %in% c("id","shares","date","author","title"))], scale. = T)
+pr_var <- (prin_comp$sdev)^2
+prop_varex <- pr_var / sum(pr_var)
+plot(prop_varex, xlab = "Principal Component",
+     ylab = "Proportion of Variance Explained",
+     type = "b")
+
+plot(cumsum(prop_varex), xlab = "Principal Component",
+     ylab = "Cumulative Proportion of Variance Explained",
+     type = "b")
+
+comp_test <- data.frame(prin_comp_test$x)[,1:30]
+```
+
+# Regression with PCs
+
+```{r}
+comp_train <- cbind(comp_train,shares = mash_work_train$shares)
+comp_test <- cbind(comp_test,shares = mash_work_test$shares)
+
+regmodel <- lm(shares ~ ., data=comp_train)
+predictions <- predict(regmodel, newdata = comp_test)
+
+prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = predictions)
+
+RMSE(prediction_list$shares,prediction_list$predicted_shares)
+```
+
+# Decision Tree with PCs
+
+```{r}
+library(rpart)
+treemodel <- rpart(shares ~., data=comp_train)
+plot(treemodel)
+predictions <- predict(treemodel, newdata = comp_test)
+
+prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = predictions)
+
+RMSE(prediction_list$shares,prediction_list$predicted_shares)
+```
+
+# Decision Tree with actual variables
+
+```{r}
+treemodel <- rpart(shares ~., data=mash_work_train[,-which(names(mash_work_train) %in% c("id","date","author","title"))])
+plot(treemodel)
+predictions <- predict(treemodel, newdata = mash_work_test[,-which(names(mash_work_test) %in% c("id","date","author","title"))])
+
+prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = predictions)
+
+RMSE(prediction_list$shares,prediction_list$predicted_shares)
+```
+
+# Random Forest Baseline
+
+```{r}
+library(randomForest)
+forestmodel <- randomForest(shares ~ average_token_length + num_hrefs + num_self_hrefs + n_tokens_content + data_channel_is_tech + data_channel_is_world + self_reference_avg_sharess, data=mash_work_train[,-which(names(mash_work_train) %in% c("id","date","author","title"))], ntree = 100)
+plot(forestmodel)
+predictions <- predict(forestmodel, newdata = mash_work_test[,-which(names(mash_work_test) %in% c("id","date","author","title"))])
+
+prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = predictions)
+
+RMSE(prediction_list$shares,prediction_list$predicted_shares)
+```
+
+# Choosing best variables
+
+```{r}
+library(tidyverse)
+var_percents <- row.names(data.frame(prin_comp_train$rotation))
+best_vars_prin_comp <-  data.frame(prin_comp_train$rotation) %>%
+                        mutate(vars = row.names(data.frame(prin_comp_train$rotation))) %>%
+                        filter(PC1 >= 0.2) 
+```
+
+# RF with best variables
+
+```{r}
+forestmodel <- randomForest(shares ~ average_token_length + global_subjectivity + global_sentiment_polarity + global_rate_positive_words + rate_positive_words + avg_positive_polarity + max_positive_polarity , data=mash_work_train[,-which(names(mash_work_train) %in% c("id","date","author","title"))], ntree = 100)
+plot(forestmodel)
+predictions <- predict(forestmodel, newdata = mash_work_test[,-which(names(mash_work_test) %in% c("id","date","author","title"))])
+
+prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = predictions)
+
+RMSE(prediction_list$shares,prediction_list$predicted_shares)
 ```
 
