@@ -15,11 +15,11 @@ library(caret)
 #Load data.
 
 ```{r}
-mash_data <- read.csv("/Users/abhijithasok/Documents/Harvard Health Data Science/Fall 2017/Intro to Data Science/Project//OnlineNewsPopularity/OnlineNewsPopularity.csv",header = T)
+mash_data <- read.csv("/Users/abhijithasok/Documents/Harvard_Health_Data_Science/Fall_2017/Intro to Data Science/Project//OnlineNewsPopularity/OnlineNewsPopularity.csv",header = T,colClasses = c('character',rep('numeric',12),rep('factor',6),rep('numeric',12),rep('factor',8),rep('numeric',22)))
 
 mash_work <- mash_data
 
-scraped_data <- read.csv("/Users/abhijithasok/Documents/Harvard Health Data Science/Fall 2017/Intro to Data Science/Project/ScrapedDataFull.csv",header = T)
+scraped_data <- read.csv("/Users/abhijithasok/Documents/Harvard_Health_Data_Science/Fall_2017/Intro to Data Science/Project/ScrapedDataFull.csv",header = T)
 
 scraped_data$X.1 <- NULL
 scraped_data$X <- NULL
@@ -32,20 +32,10 @@ id <- seq(1,nrow(mash_work),1)
 mash_work <- cbind(id,mash_work)
 ```
 
-
 #Adding scraped data
 
 ```{r}
-mash_work <- mash_work %>% inner_join(scraped_data[,c("id","date","author","title")],by="id")
-```
-
-#Outlier Removal
-
-```{r}
-mash_work %>% ggplot(aes(x=id,y=shares)) + geom_boxplot()
-mash_work <- mash_work %>% filter(shares < 250000) #Outlier removal
-mash_work %>% ggplot(aes(x=id,y=shares)) + geom_boxplot()
-share_mean <- mean(mash_work$shares)
+mash_work <- mash_work %>% left_join(scraped_data[,c("id","date","author","title")],by="id")
 ```
 
 #Assumption - All authors have written more than one article. Remove authors with just 1 article from the data.
@@ -53,22 +43,34 @@ share_mean <- mean(mash_work$shares)
 ```{r}
 article_count_by_author <- mash_work %>%
                             group_by(author) %>%
-                            summarise(author_article_count = n())
+                            dplyr::summarise(author_article_count = n())
 
 mash_work <- mash_work %>% left_join(article_count_by_author,by="author")
 
 mash_work <- mash_work %>% filter(author_article_count > 1)
-
 ```
-
 
 #Split into train and test.
 
 ```{r}
 set.seed(10)
-train_Index <- createDataPartition(mash_work$shares, times = 1, p=0.75, list = F)
+train_Index <- createDataPartition(mash_work$shares, times = 1, p=0.9, list = F)
 mash_work_train <- mash_work[train_Index,]
 mash_work_test <- mash_work[-train_Index,]
+```
+
+#Outlier Removal
+
+```{r}
+mash_work_train <- mash_work_train %>% filter(shares < 150000) #Outlier removal
+share_mean <- mean(mash_work_train$shares)
+```
+
+#Variable trends
+
+```{r}
+mash_work_train %>% ggplot(aes(x=(global_rate_positive_words),y=shares)) + geom_point() + geom_abline()
+colSums(mash_work_train == 0)/nrow(mash_work_train) * 100
 ```
 
 #Baseline prediction with share mean.
@@ -89,7 +91,7 @@ RMSE(prediction_list$shares,prediction_list$predicted_shares)
 ```{r}
 author_means <- mash_work_train %>% 
                   group_by(author) %>%
-                  summarise(author_effect = mean(shares - share_mean))
+                  dplyr::summarise(author_effect = mean(shares - share_mean))
 
 prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, author = mash_work_test$author)
 
@@ -140,7 +142,7 @@ mash_work_test <- mash_work_test %>%
 ```{r}
 shares_by_topwords <- mash_work_train %>%
                         group_by(top_words_title) %>%
-                        summarise(topword_effect = mean(shares - share_mean))
+                        dplyr::summarise(topword_effect = mean(shares - share_mean))
 
 prediction_list <- prediction_list %>% left_join(mash_work_test[,c("id","top_words_title")],by="id")
 
@@ -164,14 +166,34 @@ mash_work_test$author_article_count <- as.numeric(mash_work_test$author_article_
 
 #Baseline regression
 
-```{r}
-regmodel <- lm(shares ~ ., data=mash_work_train[,-which(names(mash_work_train) %in% c("id","date","author","title","n_unique_tokens","n_non_stop_words","self_reference_min_shares","self_reference_max_shares","global_sentiment_polarity","weekday_is_saturday","weekday_is_sunday","title_subjectivity","rate_negative_words","max_positive_polarity","min_positive_polarity","max_negative_polarity","min_negative_polarity","global_subjectivity","rate_positive_words"))],na.action = na.omit)
+```{r, warning=FALSE}
+mash_work_train_selected <- mash_work_train[,-which(names(mash_work_train) %in% c("id","date","author","title","n_unique_tokens","n_non_stop_words","self_reference_min_shares","self_reference_max_shares","global_sentiment_polarity","weekday_is_saturday","weekday_is_sunday","title_subjectivity","rate_negative_words","max_positive_polarity","min_positive_polarity","max_negative_polarity","min_negative_polarity","global_subjectivity","rate_positive_words"))]
+
+mash_work_test_selected <- mash_work_test[,-which(names(mash_work_test) %in% c("id","date","author","title","n_unique_tokens","n_non_stop_words","self_reference_min_shares","self_reference_max_shares","global_sentiment_polarity","weekday_is_saturday","weekday_is_sunday","title_subjectivity","rate_negative_words","max_positive_polarity","min_positive_polarity","max_negative_polarity","min_negative_polarity","global_subjectivity","rate_positive_words"))]
+
+# tofactor <- mash_work_train_selected[,c(10:15,17:22,32)]
+# tofactor <- data.frame(apply(tofactor, 2, as.factor))
+# mash_work_train_selected <- cbind(mash_work_train_selected[,-c(10:15,17:22,32)],tofactor)
+# 
+# tofactor <- mash_work_test_selected[,c(10:15,17:22,32)]
+# tofactor <- data.frame(apply(tofactor, 2, as.factor))
+# mash_work_test_selected <- cbind(mash_work_test_selected[,-c(10:15,17:22,32)],tofactor)
+
+regmodel <- lm(shares ~ ., data=mash_work_train_selected,na.action = na.omit)
 predictions <- predict(regmodel, newdata = mash_work_test[,-which(names(mash_work_test) %in% c("id","date","author","title"))])
 
 prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = predictions)
 
 ModelMetrics::rmse(prediction_list$shares,prediction_list$predicted_shares)
 ```
+
+#Removing near zero variance variables
+
+```{r}
+sds <- apply(mash_work_train_selected, 2, function(x)sd(x))
+lapply(sds,function(x)x<1)
+```
+
 
 #Baseline regression without correlated variables
 
@@ -184,15 +206,15 @@ ModelMetrics::rmse(prediction_list$shares,prediction_list$predicted_shares)
 # RMSE(prediction_list$shares,prediction_list$predicted_shares)
 ```
 
-#Step-wise backward
+#Step-wise forward
 
 ```{r}
 library(olsrr)
-olsback <- ols_step_forward(regmodel)
+olsforward <- ols_step_forward(regmodel)
 
 #removed_vars <- olsback$removed
 
-regmodel1 <- lm(as.formula(paste("shares ~ ",paste(olsback$predictors,collapse = "+"),sep="")), data=mash_work_train[,-which(names(mash_work_train) %in% c("id","date","author","title","n_unique_tokens","n_non_stop_words","self_reference_min_shares","self_reference_max_shares","global_sentiment_polarity","weekday_is_saturday","weekday_is_sunday","title_subjectivity","rate_negative_words","max_positive_polarity","min_positive_polarity","max_negative_polarity","min_negative_polarity","global_subjectivity","rate_positive_words"))])
+regmodel1 <- lm(as.formula(paste("shares ~ ",paste(olsforward$predictors,collapse = "+"),sep="")), data=mash_work_train[,-which(names(mash_work_train) %in% c("id","date","author","title","n_unique_tokens","n_non_stop_words","self_reference_min_shares","self_reference_max_shares","global_sentiment_polarity","weekday_is_saturday","weekday_is_sunday","title_subjectivity","rate_negative_words","max_positive_polarity","min_positive_polarity","max_negative_polarity","min_negative_polarity","global_subjectivity","rate_positive_words"))])
 predictions <- predict(regmodel1, newdata = mash_work_test[,-which(names(mash_work_test) %in% c("id","date","author","title"))])
 
 prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = predictions)
@@ -200,21 +222,182 @@ prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$sh
 ModelMetrics::rmse(prediction_list$shares,prediction_list$predicted_shares)
 ```
 
-#CV
+#CV RF
 
 ```{r}
-res <- train(as.formula(paste("shares ~ ",paste(olsback$predictors,collapse = "+"),sep="")),
-             data = mash_work_train[,-which(names(mash_work_train) %in% c("id","date","author","title","n_unique_tokens","n_non_stop_words","self_reference_min_shares","self_reference_max_shares","global_sentiment_polarity","weekday_is_saturday","weekday_is_sunday","title_subjectivity","rate_negative_words","max_positive_polarity","min_positive_polarity","max_negative_polarity","min_negative_polarity","global_subjectivity","rate_positive_words"))],
-             method = "rf",
-             trControl = trainControl(method='cv', number=20),
-             metric="RMSE")
+set.seed(10)
+library(randomForest)
+library(doMC)
+registerDoMC(cores = 6)
+# system.time(res <- train(as.formula(paste("shares ~ ",paste(olsforward$predictors,collapse = "+"),sep="")),
+#              data = (mash_work_train_selected),
+#               method = "rf",
+#               ntree = 500,
+#               maxnodes = 20,
+# #              nodesize = 20,
+#               tuneGrid = expand.grid(.mtry=round(ncol(mash_work_train_selected))/3),
+#               trControl = trainControl(method='repeatedcv', number=3, repeats=3, allowParallel = TRUE),
+#               metric="RMSE"))
+
+
+system.time(res <- train(shares ~ .,
+             data = (mash_work_train_selected),
+              method = "rf",
+              ntree = 100,
+              maxnodes = 20,
+#              nodesize = 20,
+              tuneGrid = expand.grid(.mtry=round(ncol(mash_work_train_selected)/2)),
+              trControl = trainControl(method='repeatedcv', number=3, repeats=3,allowParallel = TRUE),
+              metric="RMSE"))
+
+predictions <- predict(res, newdata = mash_work_test_selected)
+
+prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = predictions)
+
+ModelMetrics::rmse(prediction_list$shares,prediction_list$predicted_shares)
 ```
+
+#CV XGBoost
+
+```{r}
+set.seed(10)
+library(randomForest)
+library(doMC)
+registerDoMC(cores = 8)
+# system.time(res <- train(as.formula(paste("shares ~ ",paste(olsforward$predictors,collapse = "+"),sep="")),
+#              data = (mash_work_train_selected),
+#               method = "rf",
+#               ntree = 500,
+#               maxnodes = 20,
+# #              nodesize = 20,
+#               tuneGrid = expand.grid(.mtry=round(ncol(mash_work_train_selected))/3),
+#               trControl = trainControl(method='repeatedcv', number=3, repeats=3, allowParallel = TRUE),
+#               metric="RMSE"))
+
+parametersGrid <-  expand.grid(eta = 0.01, 
+                            colsample_bytree=c(0.5,0.7),
+                            max_depth=c(4,5),
+                            nrounds=1500,
+                            gamma=1,
+                            min_child_weight=2,
+                            subsample=0.75
+                            )
+set.seed(10)
+system.time(res <- train(shares ~ .,
+             data = (mash_work_train_selected),
+              method = "xgbTree",
+              ntree = 10,
+              maxnodes = 20,
+#              nodesize = 20,
+              tuneGrid = parametersGrid,
+              trControl = trainControl(method='repeatedcv', number=3, repeats=3,allowParallel = TRUE),
+              metric="RMSE"))
+
+predictions <- predict(res, newdata = mash_work_test_selected)
+
+prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = predictions)
+
+ModelMetrics::rmse(prediction_list$shares,prediction_list$predicted_shares)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Ridge Regression
+
+```{r}
+library(glmnet)
+
+mash_work_selected <- mash_work_train[,-which(names(mash_work_train) %in% c("id","date","author","title","n_unique_tokens","n_non_stop_words","self_reference_min_shares","self_reference_max_shares","global_sentiment_polarity","weekday_is_saturday","weekday_is_sunday","title_subjectivity","rate_negative_words","max_positive_polarity","min_positive_polarity","max_negative_polarity","min_negative_polarity","global_subjectivity","rate_positive_words"))]
+
+mash_work_selected_test <- mash_work_test[,-which(names(mash_work_test) %in% c("id","date","author","title","n_unique_tokens","n_non_stop_words","self_reference_min_shares","self_reference_max_shares","global_sentiment_polarity","weekday_is_saturday","weekday_is_sunday","title_subjectivity","rate_negative_words","max_positive_polarity","min_positive_polarity","max_negative_polarity","min_negative_polarity","global_subjectivity","rate_positive_words"))]
+
+mash_work_selected$shares <- as.numeric(mash_work_selected$shares)
+lambdas <- 10^seq(3, -2, by = -.1)
+cv_fit <- cv.glmnet(as.matrix(mash_work_selected[,-30]), mash_work_selected[,30], alpha = 0, lambda = lambdas)
+plot(cv_fit)
+opt_lambda <- cv_fit$lambda.min
+fit <- glmnet(as.matrix(mash_work_selected[,-30]), mash_work_selected[,30], alpha = 0, lambda = opt_lambda)
+
+predictions <- predict(fit, newx = as.matrix(mash_work_selected_test[,-which(names(mash_work_test) %in% c("id","date","author","title"))]),s=opt_lambda)
+
+prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = predictions)
+
+ModelMetrics::rmse(prediction_list$shares,prediction_list$predicted_shares)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 #PCA
 
 ```{r}
-prin_comp_train <- prcomp(mash_work_train[,-which(names(mash_work_train) %in% c("id","shares","date","author","title"))], scale. = T)
+prin_comp_train <- prcomp(mash_work_train[,-which(names(mash_work_train) %in% c("id","date","author","title","n_unique_tokens","n_non_stop_words","self_reference_min_shares","self_reference_max_shares","global_sentiment_polarity","weekday_is_saturday","weekday_is_sunday","title_subjectivity","rate_negative_words","max_positive_polarity","min_positive_polarity","max_negative_polarity","min_negative_polarity","global_subjectivity","rate_positive_words"))], scale. = T)
 pr_var <- (prin_comp$sdev)^2
 prop_varex <- pr_var / sum(pr_var)
 plot(prop_varex, xlab = "Principal Component",
