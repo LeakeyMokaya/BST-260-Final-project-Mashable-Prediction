@@ -2,8 +2,7 @@ library(shiny)
 library(corrplot)
 library(tidyverse)
 library(ggrepel)
-mash_work_train <- read.csv("Final train full.csv",header = TRUE)
-rmse_list <- read.csv("RMSEs.csv",header = TRUE)
+library(wordcloud)
 
 ui <- fluidPage(titlePanel("Mashable Article Analysis"),
                 tabsetPanel(
@@ -35,12 +34,20 @@ ui <- fluidPage(titlePanel("Mashable Article Analysis"),
                         column(6, mainPanel(tableOutput("rmsetable"))),
                         column(6,mainPanel(plotOutput("rmseplot", width = "500px", height = "500px")))
                       )
-                     )
-                    )
-                  )
-                  
+                  ),
+                  tabPanel("Analysis of title text",
+                      fluidRow(column(6,h4("Sentiment distribution of article titles")),
+                               column(6,h4("Topic distribution of all titles"))),
+                      fluidRow(column(6,imageOutput("sentiments")),
+                               column(6,imageOutput("topicmodels",width = "100px",height = "100px"))),
+                      fluidRow(column(6,h4("Top words by frequency(min. frequency = 700)")),
+                               column(6,h4("Word cloud of popular words(min. frequency = 200)"))),
+                      fluidRow(column(6,imageOutput("topwords700")),
+                               column(6,imageOutput("wordcloud200"))))))
 
 server <- function(input, output) {
+            mash_work_train <- read.csv("Final train full.csv",header = TRUE)
+            rmse_list <- read.csv("RMSEs.csv",header = TRUE)
             m <- cor(mash_work_train[,sapply(mash_work_train,is.numeric)])
             tmp = m
             msmall <- reactive({
@@ -73,6 +80,28 @@ server <- function(input, output) {
                 ylab("RMSE value")
               
             })
+              
+            output$sentiments <- renderImage({
+              filename <- normalizePath(file.path("./images/Sentiments.png"))
+              list(src = filename, alt = "Sentiment distribution")
+            }, deleteFile = FALSE)
+            
+            output$topicmodels <- renderImage({
+              filename <- normalizePath(file.path("./images/Topic Models.png"))
+              list(src = filename, alt = "Topic distribution of titles")
+            }, deleteFile = FALSE)
+            
+            output$topwords700 <- renderImage({
+              filename <- normalizePath(file.path("./images/Top words more than 700.png"))
+              list(src = filename, alt = "Top words by frequency")
+            }, deleteFile = FALSE)
+            
+            output$wordcloud200 <- renderImage({
+              filename <- normalizePath(file.path("./images/Wordcloud_min 200.png"))
+              list(src = filename, alt = "Wordcloud of most frequent words")
+            }, deleteFile = FALSE)
+              
+            
 }
 
  
