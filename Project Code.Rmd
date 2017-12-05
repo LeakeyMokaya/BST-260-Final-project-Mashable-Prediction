@@ -64,6 +64,7 @@ mash_work_test <- mash_work[-train_Index,]
 ```{r}
 mash_work_train <- mash_work_train %>% filter(shares < 150000) #Outlier removal
 share_mean <- mean(mash_work_train$shares)
+#write.csv(mash_work_train,"Final train full.csv",row.names = FALSE)
 ```
 
 #Variable trends
@@ -76,6 +77,7 @@ colSums(mash_work_train == 0)/nrow(mash_work_train) * 100
 #Baseline prediction with share mean.
 
 ```{r}
+rmse_list <- data.frame(method = character(),rmse = numeric(),stringsAsFactors = FALSE)
 share_mean <- mean(mash_work_train$shares)
 prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = share_mean)
 
@@ -84,6 +86,10 @@ RMSE <- function(true_ratings, predicted_ratings){
 }
 
 RMSE(prediction_list$shares,prediction_list$predicted_shares)
+
+c=1
+rmse_list[c,] <- c("Uniform prediction with mean of all shares",RMSE(prediction_list$shares,prediction_list$predicted_shares))
+c<-c+1
 ```
 
 #Author effect - No regularization
@@ -101,6 +107,8 @@ prediction_list <- prediction_list %>%
                     mutate(predicted_shares = share_mean + author_effect)
 
 RMSE(prediction_list$shares,prediction_list$predicted_shares)
+rmse_list[c,] <- c("Prediction with Mean and Author effect",RMSE(prediction_list$shares,prediction_list$predicted_shares))
+c<-c+1 
 ```
 
 # Author effect - Regularization
@@ -153,6 +161,8 @@ prediction_list <- prediction_list %>%
 
 RMSE(prediction_list$shares,prediction_list$predicted_shares)
 
+rmse_list[c,] <- c("Prediction with Mean and topwords effect",RMSE(prediction_list$shares,prediction_list$predicted_shares))
+c<-c+1
 ```
 
 # Clearing unused character and factor variables for modelling
@@ -180,30 +190,19 @@ mash_work_test_selected <- mash_work_test[,-which(names(mash_work_test) %in% c("
 # mash_work_test_selected <- cbind(mash_work_test_selected[,-c(10:15,17:22,32)],tofactor)
 
 regmodel <- lm(shares ~ ., data=mash_work_train_selected,na.action = na.omit)
-predictions <- predict(regmodel, newdata = mash_work_test[,-which(names(mash_work_test) %in% c("id","date","author","title"))])
+predictions <- predict(regmodel, newdata = mash_work_test[,-which(names(mash_work_test) %in% c("date","author","title"))])
 
 prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = predictions)
 
-ModelMetrics::rmse(prediction_list$shares,prediction_list$predicted_shares)
-```
+RMSE(prediction_list$shares,prediction_list$predicted_shares)
+rmse_list[c,] <- c("Regression with all variables after correlation treatment",RMSE(prediction_list$shares,prediction_list$predicted_shares))
+c<-c+1
 
-#Removing near zero variance variables
-
-```{r}
-sds <- apply(mash_work_train_selected, 2, function(x)sd(x))
-lapply(sds,function(x)x<1)
-```
-
-
-#Baseline regression without correlated variables
-
-```{r}
-# regmodel <- lm(shares ~ .- n_unique_tokens - n_non_stop_words - self_reference_min_shares - self_reference_max_shares - global_sentiment_polarity - weekday_is_saturday - weekday_is_sunday - title_subjectivity - rate_negative_words, data=mash_work_train[,-which(names(mash_work_train) %in% c("id","date","author","title"))])
-# predictions <- predict(regmodel, newdata = mash_work_test[,-which(names(mash_work_test) %in% c("id","date","author","title"))])
+# cooks <- data.frame(id = mash_work_train_selected$id,dist = cooks.distance(regmodel),shares=mash_work_train_selected$shares)
 # 
-# prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = predictions)
+# pot_out <- cooks %>% filter(dist > 3*mean(cooks$dist))
 # 
-# RMSE(prediction_list$shares,prediction_list$predicted_shares)
+# mash_work_train_selected <- mash_work_train_selected %>% filter(!(id %in% pot_out$id))
 ```
 
 #Step-wise forward
@@ -219,7 +218,9 @@ predictions <- predict(regmodel1, newdata = mash_work_test[,-which(names(mash_wo
 
 prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = predictions)
 
-ModelMetrics::rmse(prediction_list$shares,prediction_list$predicted_shares)
+RMSE(prediction_list$shares,prediction_list$predicted_shares)
+rmse_list[c,] <- c("Step-wise forward regression",RMSE(prediction_list$shares,prediction_list$predicted_shares))
+c<-c+1
 ```
 
 #CV RF
@@ -254,14 +255,16 @@ predictions <- predict(res, newdata = mash_work_test_selected)
 
 prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = predictions)
 
-ModelMetrics::rmse(prediction_list$shares,prediction_list$predicted_shares)
+RMSE(prediction_list$shares,prediction_list$predicted_shares)
+rmse_list[c,] <- c("Tuned Random Forest with repeated cross-validation and parallel processing",RMSE(prediction_list$shares,prediction_list$predicted_shares))
+c<-c+1
 ```
 
 #CV XGBoost
 
 ```{r}
 set.seed(10)
-library(randomForest)
+library(xgboost)
 library(doMC)
 registerDoMC(cores = 8)
 # system.time(res <- train(as.formula(paste("shares ~ ",paste(olsforward$predictors,collapse = "+"),sep="")),
@@ -274,10 +277,10 @@ registerDoMC(cores = 8)
 #               trControl = trainControl(method='repeatedcv', number=3, repeats=3, allowParallel = TRUE),
 #               metric="RMSE"))
 
-parametersGrid <-  expand.grid(eta = 0.01, 
+parametersGrid <-  expand.grid(eta = 0.005, 
                             colsample_bytree=c(0.5,0.7),
                             max_depth=c(4,5),
-                            nrounds=1500,
+                            nrounds=2000,
                             gamma=1,
                             min_child_weight=2,
                             subsample=0.75
@@ -290,6 +293,7 @@ system.time(res <- train(shares ~ .,
               maxnodes = 20,
 #              nodesize = 20,
               tuneGrid = parametersGrid,
+              verbose = TRUE,
               trControl = trainControl(method='repeatedcv', number=3, repeats=3,allowParallel = TRUE),
               metric="RMSE"))
 
@@ -297,208 +301,44 @@ predictions <- predict(res, newdata = mash_work_test_selected)
 
 prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = predictions)
 
-ModelMetrics::rmse(prediction_list$shares,prediction_list$predicted_shares)
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# Ridge Regression
-
-```{r}
-library(glmnet)
-
-mash_work_selected <- mash_work_train[,-which(names(mash_work_train) %in% c("id","date","author","title","n_unique_tokens","n_non_stop_words","self_reference_min_shares","self_reference_max_shares","global_sentiment_polarity","weekday_is_saturday","weekday_is_sunday","title_subjectivity","rate_negative_words","max_positive_polarity","min_positive_polarity","max_negative_polarity","min_negative_polarity","global_subjectivity","rate_positive_words"))]
-
-mash_work_selected_test <- mash_work_test[,-which(names(mash_work_test) %in% c("id","date","author","title","n_unique_tokens","n_non_stop_words","self_reference_min_shares","self_reference_max_shares","global_sentiment_polarity","weekday_is_saturday","weekday_is_sunday","title_subjectivity","rate_negative_words","max_positive_polarity","min_positive_polarity","max_negative_polarity","min_negative_polarity","global_subjectivity","rate_positive_words"))]
-
-mash_work_selected$shares <- as.numeric(mash_work_selected$shares)
-lambdas <- 10^seq(3, -2, by = -.1)
-cv_fit <- cv.glmnet(as.matrix(mash_work_selected[,-30]), mash_work_selected[,30], alpha = 0, lambda = lambdas)
-plot(cv_fit)
-opt_lambda <- cv_fit$lambda.min
-fit <- glmnet(as.matrix(mash_work_selected[,-30]), mash_work_selected[,30], alpha = 0, lambda = opt_lambda)
-
-predictions <- predict(fit, newx = as.matrix(mash_work_selected_test[,-which(names(mash_work_test) %in% c("id","date","author","title"))]),s=opt_lambda)
-
-prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = predictions)
-
-ModelMetrics::rmse(prediction_list$shares,prediction_list$predicted_shares)
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#PCA
-
-```{r}
-prin_comp_train <- prcomp(mash_work_train[,-which(names(mash_work_train) %in% c("id","date","author","title","n_unique_tokens","n_non_stop_words","self_reference_min_shares","self_reference_max_shares","global_sentiment_polarity","weekday_is_saturday","weekday_is_sunday","title_subjectivity","rate_negative_words","max_positive_polarity","min_positive_polarity","max_negative_polarity","min_negative_polarity","global_subjectivity","rate_positive_words"))], scale. = T)
-pr_var <- (prin_comp$sdev)^2
-prop_varex <- pr_var / sum(pr_var)
-plot(prop_varex, xlab = "Principal Component",
-     ylab = "Proportion of Variance Explained",
-     type = "b")
-
-plot(cumsum(prop_varex), xlab = "Principal Component",
-     ylab = "Cumulative Proportion of Variance Explained",
-     type = "b")
-
-# We choose 30 PCs. They cover 94.5% of the variance of the data
-
-comp_train <- data.frame(prin_comp_train$x)[,1:30]
-
-# Doing the same thing over the test set.
-
-prin_comp_test <- prcomp(mash_work_test[,-which(names(mash_work_test) %in% c("id","shares","date","author","title"))], scale. = T)
-pr_var <- (prin_comp$sdev)^2
-prop_varex <- pr_var / sum(pr_var)
-plot(prop_varex, xlab = "Principal Component",
-     ylab = "Proportion of Variance Explained",
-     type = "b")
-
-plot(cumsum(prop_varex), xlab = "Principal Component",
-     ylab = "Cumulative Proportion of Variance Explained",
-     type = "b")
-
-comp_test <- data.frame(prin_comp_test$x)[,1:30]
-```
-
-# Regression with PCs
-
-```{r}
-comp_train <- cbind(comp_train,shares = mash_work_train$shares)
-comp_test <- cbind(comp_test,shares = mash_work_test$shares)
-
-regmodel <- lm(shares ~ ., data=comp_train)
-predictions <- predict(regmodel, newdata = comp_test)
-
-prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = predictions)
-
 RMSE(prediction_list$shares,prediction_list$predicted_shares)
+rmse_list[c,] <- c("Tuned Gradient Boosted Trees with repeated cross-validation and parallel processing",RMSE(prediction_list$shares,prediction_list$predicted_shares))
+c<-c+1
 ```
 
-# Decision Tree with PCs
+#RMSE table format and save
 
 ```{r}
-library(rpart)
-treemodel <- rpart(shares ~., data=comp_train)
-plot(treemodel)
-predictions <- predict(treemodel, newdata = comp_test)
-
-prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = predictions)
-
-RMSE(prediction_list$shares,prediction_list$predicted_shares)
+rmse_list$rmse <- as.numeric(rmse_list$rmse)
+rmse_list <- rmse_list %>% mutate(rmse = round(rmse,digits=2))
+nos <- seq(1,nrow(rmse_list),1)
+algos <- c("Mean","Mean + Author","Mean + Topwords","Linear Regression","Step-wise Forward Linear Regression","Tuned Random Forest","Tuned Gradient Boosted Trees")
+rmse_list <- cbind(nos,algos,rmse_list)
+write.csv(rmse_list,"Mashable_shares_prediction/RMSEs.csv",row.names = FALSE)
 ```
 
-# Decision Tree with actual variables
+
+#h2o
 
 ```{r}
-treemodel <- rpart(shares ~., data=mash_work_train[,-which(names(mash_work_train) %in% c("id","date","author","title"))])
-plot(treemodel)
-predictions <- predict(treemodel, newdata = mash_work_test[,-which(names(mash_work_test) %in% c("id","date","author","title"))])
-
-prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = predictions)
-
-RMSE(prediction_list$shares,prediction_list$predicted_shares)
-```
-
-# Random Forest Baseline
-
-```{r}
-library(randomForest)
-forestmodel <- randomForest(shares ~ average_token_length + num_hrefs + num_self_hrefs + n_tokens_content + data_channel_is_tech + data_channel_is_world + self_reference_avg_sharess, data=mash_work_train[,-which(names(mash_work_train) %in% c("id","date","author","title"))], ntree = 100)
-plot(forestmodel)
-predictions <- predict(forestmodel, newdata = mash_work_test[,-which(names(mash_work_test) %in% c("id","date","author","title"))])
-
-prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = predictions)
-
-RMSE(prediction_list$shares,prediction_list$predicted_shares)
-```
-
-# Choosing best variables
-
-```{r}
-library(tidyverse)
-var_percents <- row.names(data.frame(prin_comp_train$rotation))
-best_vars_prin_comp <-  data.frame(prin_comp_train$rotation) %>%
-                        mutate(vars = row.names(data.frame(prin_comp_train$rotation))) %>%
-                        filter(PC1 >= 0.2) 
-```
-
-# RF with best variables
-
-```{r}
-forestmodel <- randomForest(shares ~ average_token_length + global_subjectivity + global_sentiment_polarity + global_rate_positive_words + rate_positive_words + avg_positive_polarity + max_positive_polarity , data=mash_work_train[,-which(names(mash_work_train) %in% c("id","date","author","title"))], ntree = 100)
-plot(forestmodel)
-predictions <- predict(forestmodel, newdata = mash_work_test[,-which(names(mash_work_test) %in% c("id","date","author","title"))])
-
-prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = predictions)
-
-RMSE(prediction_list$shares,prediction_list$predicted_shares)
-```
-
+# library(h2o)
+# localH2O <- h2o.init(min_mem_size = "20g")
+# train_h2o <- as.h2o(mash_work_train_selected, key="train_h2o")
+# test_h2o <- as.h2o(mash_work_test_selected, key="train_h2o")
+# model <- h2o.deeplearning( x = c(1:29,31:32),  # column numbers for predictors
+#                y = 20,   # column number for label
+#                training_frame = train_h2o, # data in H2O format
+#                stopping_metric = "RMSE",
+#                activation = "TanhWithDropout", # or 'Tanh'
+#                input_dropout_ratio = 0.2, # % of inputs dropout
+#                hidden_dropout_ratios = c(0.5,0.5,0.5), # % for nodes dropout
+#                balance_classes = TRUE, 
+#                hidden = c(50,50,50), # three layers of 50 nodes
+#                epochs = 100)
+# 
+# predictions <- h2o.predict(model, newdata = test_h2o)
+# 
+# prediction_list <- data.frame(id = mash_work_test$id, shares = mash_work_test$shares, predicted_shares = predictions)
+# 
+# ModelMetrics::rmse(prediction_list$shares,prediction_list$predicted_shares)
+ ```
