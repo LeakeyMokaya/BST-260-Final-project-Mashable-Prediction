@@ -4,6 +4,9 @@ library(tidyverse)
 library(ggrepel)
 library(wordcloud)
 
+mash_work_train <- read.csv("Final train full.csv",header = TRUE)
+rmse_list <- read.csv("RMSEs.csv",header = TRUE)
+
 ui <- fluidPage(titlePanel("Mashable Article Analysis"),
                 tabsetPanel(
                   tabPanel("Correlation and trend analysis",
@@ -46,8 +49,6 @@ ui <- fluidPage(titlePanel("Mashable Article Analysis"),
                                column(6,imageOutput("wordcloud200"))))))
 
 server <- function(input, output) {
-            mash_work_train <- read.csv("Final train full.csv",header = TRUE)
-            rmse_list <- read.csv("RMSEs.csv",header = TRUE)
             m <- cor(mash_work_train[,sapply(mash_work_train,is.numeric)])
             tmp = m
             msmall <- reactive({

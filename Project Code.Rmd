@@ -67,13 +67,6 @@ share_mean <- mean(mash_work_train$shares)
 #write.csv(mash_work_train,"Final train full.csv",row.names = FALSE)
 ```
 
-#Variable trends
-
-```{r}
-mash_work_train %>% ggplot(aes(x=(global_rate_positive_words),y=shares)) + geom_point() + geom_abline()
-colSums(mash_work_train == 0)/nrow(mash_work_train) * 100
-```
-
 #Baseline prediction with share mean.
 
 ```{r}
@@ -111,24 +104,48 @@ rmse_list[c,] <- c("Prediction with Mean and Author effect",RMSE(prediction_list
 c<-c+1 
 ```
 
-# Author effect - Regularization
+# Processing of Title text
 
 ```{r}
-# lambdas <- seq(0,1000)
-# tmp <- mash_work_train %>% 
-#   group_by(author) %>% 
-#   summarize(author_effect = sum(shares - share_mean), n_i = n())
-# 
-# rmses <- sapply(lambdas, function(l){
-#   joined <- mash_work_test %>% 
-#     left_join(tmp, by='author') %>% 
-#     mutate(b_i = author_effect/(n_i+l)) %>%
-#     replace_na(list(b_i=0))
-#     predicted_shares <- share_mean + joined$b_i
-#     return(RMSE(predicted_shares, mash_work_test$shares))
-# })
-# qplot(lambdas, rmses) 
+library(tm)
+
+articles <- mash_work_train
+
+#Converting to corpus
+article_corpus <- Corpus(VectorSource(articles$title))
+
+#Converting to lower case
+article_corpus <- tm_map(article_corpus, content_transformer(tolower))
+
+#Remove URLs
+removeURL <- function(x) gsub("http[^[:space:]]*", "", x)
+article_corpus <- tm_map(article_corpus, content_transformer(removeURL))
+
+#Keep only English letters and space
+removeNumPunct <- function(x) gsub("[^[:alpha:][:space:]]*", "", x)
+article_corpus <- tm_map(article_corpus, content_transformer(removeNumPunct))
+
+#Remove stopwords
+myStopwords <- c(stopwords('english'), "mashable")
+article_corpus <- tm_map(article_corpus, removeWords, myStopwords)
+
+#Remove extra whitespace
+article_corpus <- tm_map(article_corpus, stripWhitespace)
+
+#Copy for stem completion
+article_corpus_copy <- article_corpus
+
+#Stem Document
+article_corpus <- tm_map(article_corpus, content_transformer(stemDocument))
+
+#Document - Term Matrix
+tdm <- TermDocumentMatrix(article_corpus,
+                          control = list(wordLengths = c(1, Inf),weighting = weightTfIdf))
+
+#Frequent terms
+freq.terms <- findFreqTerms(tdm, lowfreq = 300)
 ```
+
 
 # Text effects - Top words with TF > 300 ( Note io to ios)
 

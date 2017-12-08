@@ -5,6 +5,6 @@ account: abhijith-asok
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 244292
-bundleId: 1115490
+bundleId: 1117264
 url: https://abhijith-asok.shinyapps.io/mashable_shares_prediction/
-when: 1512440020.15239
+when: 1512502291.44408
