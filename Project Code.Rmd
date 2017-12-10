@@ -9,13 +9,25 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE,eval = FALSE)
 ```
 
+#### Quick Links ####
+
+[Google Drive Folder containing the data](https://drive.google.com/drive/folders/1wnwedxkSo_hoscvWFohUuApDrIH4CaOQ?usp=sharing)
+
+[Shiny Dashboard](https://abhijith-asok.shinyapps.io/mashable_shares_prediction/)   
+(In case you are not able to access the dashboard, kindly shoot an email to aasok@hsph.harvard.edu or chilger@hsph.harvard.edu and we'll restart the dashboard. RStudio's Shiny Server only allows a maximum of 1 hour of idle time before sending the dashboard to sleep)
+
+[Summary video](https://www.youtube.com/watch?v=kBSfymZATfw&feature=youtu.be)
+
+[GitHub Repo](https://github.com/abhijith-asok/BST-260-Final-project-Mashable-Prediction)
+
+
 # Description
 
 ## Overview and Motivation
 
 Media companies like Mashable produce tens of thousands of articles per year, all with varying degrees of virality. The virality of the content produced is key to a media company’s profitability. An accurate model that could predict parameters that increase the virality of an article, specifically, the number of social shares it receives, would be extremely valuable. 
 
-This is of personal interest to us, since one of us comes from a marketing and product management background, while the other has had a respectable amount of experience in predictive model building.  We both had a desire to incorporate regression and machine learning techniques in this project.
+This is of personal interest to us, since one of us comes from a marketing and product management background, while the other has had a respectable amount of experience in predictive model building.  We both had a desire to incorporate regression and machine learning techniques in this project. A short video summarising our approach and findings can be found [here](https://www.youtube.com/watch?v=kBSfymZATfw&feature=youtu.be).
 
 ## Related Work
 
