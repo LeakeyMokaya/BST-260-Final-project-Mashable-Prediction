@@ -1,6 +1,7 @@
 # BST-260-Final-project-Mashable-Prediction
 
-P.S. : All codes in Project Code.Rmd / Project Code.html.
+P.S. : All codes in Project Code.Rmd / Project Code.html.  
+
 P.S. : "Mashable_shares_prediction" is the Shiny folder.
 
 #### Quick Links ####
