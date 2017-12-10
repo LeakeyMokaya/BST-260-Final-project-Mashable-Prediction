@@ -1,0 +1,10 @@
+"nos","algos","method","time"
+1,"Mean","Uniform prediction with mean of all shares",0
+2,"Mean + Author","Prediction with Mean and Author effect",0
+3,"Mean + Topwords","Prediction with Mean and topwords effect",0
+4,"Linear Regression","Regression with all variables after correlation treatment",0.12
+5,"Step-wise Forward Linear Regression","Step-wise forward regression",55.93
+6,"Tree","Decision Tree with non-correlated variables",2.84
+7,"Top regression","Regression using top variables only",0.04
+8,"Tuned Random Forest","Tuned Random Forest with repeated cross-validation and parallel processing",31.61
+9,"Tuned Gradient Boosted Trees","Tuned Gradient Boosted Trees with repeated cross-validation and parallel processing",470.25
